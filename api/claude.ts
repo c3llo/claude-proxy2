@@ -15,14 +15,10 @@ export default async function handler(
     return res.status(200).end();
   }
 
-  // POST만 허용
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  /* ==============================
-   * ① requestId 생성 (최상단)
-   * ============================== */
   const requestId = crypto.randomUUID();
 
   const apiKey = process.env.CLAUDE_API_KEY;
@@ -36,15 +32,40 @@ export default async function handler(
 
   try {
     /* ==============================
-     * ② Claude 호출 직전 로그
+     * ① 원본 요청 로그 (요약)
      * ============================== */
     console.log("[CLAUDE REQUEST]", {
       requestId,
-      body: req.body
-      // 필요하면 여기서
-      // model: req.body?.model
-      // system: req.body?.system
+      model: req.body?.model,
+      max_tokens: req.body?.max_tokens,
+      systemLength: req.body?.system?.length,
+      messageCount: req.body?.messages?.length
     });
+
+    /* ==============================
+     * ② messages 상세 로그 (핵심)
+     * ============================== */
+    if (Array.isArray(req.body?.messages)) {
+      console.log(
+        "[CLAUDE MESSAGES RAW]",
+        JSON.stringify(req.body.messages, null, 2)
+      );
+
+      console.log("[CLAUDE MESSAGES STATS]", {
+        requestId,
+        roles: req.body.messages.map((m: any) => m.role),
+        totalMessageLength: req.body.messages.reduce(
+          (sum: number, m: any) => sum + (m.content?.length || 0),
+          0
+        )
+      });
+    } else {
+      console.warn("[CLAUDE MESSAGES WARNING]", {
+        requestId,
+        message: "messages is not an array",
+        value: req.body?.messages
+      });
+    }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -65,7 +86,7 @@ export default async function handler(
       requestId,
       status: response.status,
       usage: data?.usage,
-      outputPreview: data?.content?.[0]?.text?.slice(0, 500) // 로그 폭주 방지
+      outputPreview: data?.content?.[0]?.text?.slice(0, 500)
     });
 
     return res.status(response.status).json({
@@ -74,10 +95,6 @@ export default async function handler(
     });
 
   } catch (e: any) {
-
-    /* ==============================
-     * ④ 에러 로그 (매우 중요)
-     * ============================== */
     console.error("[CLAUDE ERROR]", {
       requestId,
       message: e.message,
